@@ -68,11 +68,10 @@
     <!-- Firebase SDKs -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInWithCustomToken, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, onSnapshot, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
         // Variáveis de configuração do Firebase
-        // Estes são os seus valores obtidos do console do Firebase.
         const firebaseConfig = {
             apiKey: "AIzaSyBiVpMpGO1PUV-h_6lNRzL1vmcbb2gbXYI",
             authDomain: "painel-diretorio-prod.firebaseapp.com",
@@ -82,16 +81,12 @@
             appId: "1:960079986726:web:bacf2ef10e900fda8226e7",
             measurementId: "G-DGRD5ME6VV"
         };
-        const app_id_for_firestore = firebaseConfig.appId;
-
-        // O token de autenticação inicial não é necessário no GitHub Pages.
-        // A autenticação anônima será usada por padrão.
 
         let app;
         let db;
         let auth;
         let authStateReady = false;
-        let lastStatus = null; // Variável para rastrear o último status
+        let lastStatus = null;
 
         const statusPanel = document.getElementById('status-panel');
         const onTimeBtn = document.getElementById('on-time-btn');
@@ -180,11 +175,9 @@
             auth = getAuth(app);
             
             try {
-                // A autenticação anônima é suficiente para este caso
                 await signInAnonymously(auth);
                 authStateReady = true;
                 console.log("Autenticação bem-sucedida.");
-                // Começa a escutar as atualizações do banco de dados após a autenticação
                 listenForStatusUpdates();
                 setupButtons();
             } catch (error) {
@@ -196,13 +189,13 @@
         // Funções para manipular o banco de dados
         async function updateStatus(isDelayed) {
             if (!authStateReady) return;
-            const statusDocRef = doc(db, 'artifacts', app_id_for_firestore, 'public', 'data', 'status_data', 'current_status');
+            // O app_id_for_firestore precisa ser um ID real de aplicativo para o Firestore
+            const statusDocRef = doc(db, 'artifacts', firebaseConfig.appId, 'public', 'data', 'status_data', 'current_status');
             try {
                 await setDoc(statusDocRef, { isDelayed: isDelayed, timestamp: new Date() }, { merge: true });
                 console.log("Status atualizado com sucesso.");
             } catch (error) {
                 console.error("Erro ao atualizar o status:", error);
-                // Usar o alerta personalizado em vez do pop-up
                 showAlert("Erro ao atualizar o status. Verifique sua conexão.");
             }
         }
@@ -210,20 +203,19 @@
         // Listener em tempo real para o status
         function listenForStatusUpdates() {
             if (!authStateReady) return;
-            const statusDocRef = doc(db, 'artifacts', app_id_for_firestore, 'public', 'data', 'status_data', 'current_status');
+            const statusDocRef = doc(db, 'artifacts', firebaseConfig.appId, 'public', 'data', 'status_data', 'current_status');
             onSnapshot(statusDocRef, (doc) => {
                 if (doc.exists()) {
                     const data = doc.data();
                     const currentStatus = data.isDelayed;
 
-                    // Mostra o alerta apenas se o status realmente mudou
                     if (lastStatus !== null && currentStatus !== lastStatus) {
                         const message = currentStatus ? "ATENÇÃO: Produção foi atualizada para ATRASADA!" : "Produção está agora EM DIA!";
                         showAlert(message);
                     }
                     
                     renderStatus(currentStatus);
-                    lastStatus = currentStatus; // Atualiza o último status
+                    lastStatus = currentStatus;
                 } else {
                     console.log("Documento não encontrado, criando um novo.");
                     updateStatus(false);
@@ -250,4 +242,3 @@
     </script>
 </body>
 </html>
-
