@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Status da Produção</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts - Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            @apply bg-gray-100 flex items-center justify-center min-h-screen p-4;
+        }
+        .alert-container {
+            @apply fixed top-0 left-0 w-full h-full flex items-center justify-center bg-gray-900 bg-opacity-75 z-50;
+        }
+        .alert-box {
+            @apply bg-white p-8 md:p-12 rounded-xl shadow-2xl flex flex-col items-center max-w-sm text-center;
+        }
+        .alert-close {
+            @apply absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors duration-200;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen p-4">
+
+    <!-- Container Principal -->
+    <div class="w-full max-w-lg mx-auto bg-white shadow-xl rounded-2xl p-6 md:p-10 flex flex-col items-center">
+        <h1 class="text-3xl md:text-4xl font-bold text-gray-800 text-center mb-6">Status da Produção</h1>
+        <p class="text-lg text-gray-500 text-center mb-8">Última atualização em tempo real para toda a equipe.</p>
+
+        <!-- Painel de Status -->
+        <div id="status-panel" class="w-full p-8 md:p-12 text-center rounded-2xl transition-all duration-500 ease-in-out transform scale-100">
+            <!-- Conteúdo dinâmico aqui -->
+        </div>
+
+        <!-- Botões de Ação -->
+        <div class="mt-8 w-full flex flex-col md:flex-row gap-4">
+            <button id="on-time-btn" class="flex-1 py-4 px-6 rounded-xl text-lg font-semibold text-white bg-green-500 hover:bg-green-600 focus:outline-none focus:ring-4 focus:ring-green-300 transition-all duration-300 transform hover:scale-105">
+                Produção em Dia
+            </button>
+            <button id="delayed-btn" class="flex-1 py-4 px-6 rounded-xl text-lg font-semibold text-white bg-red-500 hover:bg-red-600 focus:outline-none focus:ring-4 focus:ring-red-300 transition-all duration-300 transform hover:scale-105">
+                Produção Atrasada
+            </button>
+        </div>
+        
+        <!-- Mensagem de carregamento -->
+        <p id="loading-msg" class="mt-6 text-gray-500">Carregando status...</p>
+    </div>
+
+    <!-- Caixa de Alerta Personalizada -->
+    <div id="custom-alert-container" class="alert-container hidden">
+        <div class="alert-box relative">
+            <button id="close-alert-btn" class="alert-close">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+            </button>
+            <div id="alert-message" class="text-xl md:text-2xl font-bold text-gray-800 mb-4"></div>
+            <p class="text-gray-600">O status da produção foi atualizado em tempo real.</p>
+        </div>
+    </div>
+
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInWithCustomToken, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, onSnapshot, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        // Variáveis globais do ambiente
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        let app;
+        let db;
+        let auth;
+        let authStateReady = false;
+        let lastStatus = null; // Variável para rastrear o último status
+
+        const statusPanel = document.getElementById('status-panel');
+        const onTimeBtn = document.getElementById('on-time-btn');
+        const delayedBtn = document.getElementById('delayed-btn');
+        const loadingMsg = document.getElementById('loading-msg');
+        
+        // Elementos do alerta personalizado
+        const customAlertContainer = document.getElementById('custom-alert-container');
+        const alertMessage = document.getElementById('alert-message');
+        const closeAlertBtn = document.getElementById('close-alert-btn');
+
+        // Função para exibir o alerta personalizado
+        function showAlert(message) {
+            alertMessage.textContent = message;
+            customAlertContainer.classList.remove('hidden');
+        }
+
+        // Função para esconder o alerta personalizado
+        function hideAlert() {
+            customAlertContainer.classList.add('hidden');
+        }
+
+        // Event listener para fechar o alerta
+        closeAlertBtn.addEventListener('click', hideAlert);
+
+        // Função para renderizar o status
+        function renderStatus(isDelayed) {
+            let htmlContent = '';
+            let panelClasses = '';
+
+            if (isDelayed) {
+                panelClasses = 'bg-red-50 text-red-700';
+                htmlContent = `
+                    <div class="flex flex-col items-center">
+                        <svg class="h-16 w-16 text-red-500 mb-4 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        </svg>
+                        <p class="text-3xl md:text-5xl font-extrabold mb-2">PRODUÇÃO ATRASADA!</p>
+                        <p class="text-xl md:text-2xl font-semibold text-red-600 mb-4">Avisar o cliente:</p>
+                        <ul class="text-lg md:text-xl text-left w-full space-y-2">
+                            <li class="flex items-center">
+                                <span class="font-bold mr-2">Retirada:</span> 48 horas
+                            </li>
+                            <li class="flex items-center">
+                                <span class="font-bold mr-2">Entrega:</span> 72 horas
+                            </li>
+                        </ul>
+                    </div>
+                `;
+            } else {
+                panelClasses = 'bg-green-50 text-green-700';
+                htmlContent = `
+                    <div class="flex flex-col items-center">
+                        <svg class="h-16 w-16 text-green-500 mb-4 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <p class="text-3xl md:text-5xl font-extrabold mb-2">PRODUÇÃO EM DIA!</p>
+                        <p class="text-xl md:text-2xl font-semibold text-green-600 mb-4">Avisar o cliente:</p>
+                        <ul class="text-lg md:text-xl text-left w-full space-y-2">
+                            <li class="flex items-center">
+                                <span class="font-bold mr-2">Retirada:</span> 24 horas
+                            </li>
+                            <li class="flex items-center">
+                                <span class="font-bold mr-2">Entrega:</span> 48 horas
+                            </li>
+                        </ul>
+                    </div>
+                `;
+            }
+            statusPanel.className = `w-full p-8 md:p-12 text-center rounded-2xl transition-all duration-500 ease-in-out transform scale-100 ${panelClasses}`;
+            statusPanel.innerHTML = htmlContent;
+            loadingMsg.classList.add('hidden');
+        }
+
+        // Inicialização do Firebase e autenticação
+        async function initializeFirebase() {
+            if (!firebaseConfig) {
+                console.error("Firebase config is missing.");
+                loadingMsg.textContent = 'Erro: Configuração do Firebase ausente.';
+                return;
+            }
+
+            app = initializeApp(firebaseConfig);
+            db = getFirestore(app);
+            auth = getAuth(app);
+            
+            try {
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+                authStateReady = true;
+                console.log("Autenticação bem-sucedida.");
+                // Começa a escutar as atualizações do banco de dados após a autenticação
+                listenForStatusUpdates();
+                setupButtons();
+            } catch (error) {
+                console.error("Erro na autenticação:", error);
+                loadingMsg.textContent = `Erro de autenticação: ${error.message}`;
+            }
+        }
+
+        // Funções para manipular o banco de dados
+        async function updateStatus(isDelayed) {
+            if (!authStateReady) return;
+            const statusDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'status_data', 'current_status');
+            try {
+                await setDoc(statusDocRef, { isDelayed: isDelayed, timestamp: new Date() }, { merge: true });
+                console.log("Status atualizado com sucesso.");
+            } catch (error) {
+                console.error("Erro ao atualizar o status:", error);
+                alert("Erro ao atualizar o status. Verifique sua conexão.");
+            }
+        }
+
+        // Listener em tempo real para o status
+        function listenForStatusUpdates() {
+            if (!authStateReady) return;
+            const statusDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'status_data', 'current_status');
+            onSnapshot(statusDocRef, (doc) => {
+                if (doc.exists()) {
+                    const data = doc.data();
+                    const currentStatus = data.isDelayed;
+
+                    // Mostra o alerta apenas se o status realmente mudou
+                    if (lastStatus !== null && currentStatus !== lastStatus) {
+                        const message = currentStatus ? "ATENÇÃO: Produção foi atualizada para ATRASADA!" : "Produção está agora EM DIA!";
+                        showAlert(message);
+                    }
+                    
+                    renderStatus(currentStatus);
+                    lastStatus = currentStatus; // Atualiza o último status
+                } else {
+                    console.log("Documento não encontrado, criando um novo.");
+                    updateStatus(false);
+                }
+            }, (error) => {
+                console.error("Erro ao escutar o status:", error);
+                loadingMsg.textContent = `Erro de conexão: ${error.message}`;
+            });
+        }
+        
+        // Configurar listeners de botões
+        function setupButtons() {
+            onTimeBtn.addEventListener('click', () => {
+                updateStatus(false);
+            });
+            
+            delayedBtn.addEventListener('click', () => {
+                updateStatus(true);
+            });
+        }
+
+        // Iniciar o aplicativo
+        initializeFirebase();
+    </script>
+</body>
+</html>
