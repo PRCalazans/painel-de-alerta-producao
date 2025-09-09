@@ -32,6 +32,9 @@
     <div class="w-full max-w-lg mx-auto bg-white shadow-xl rounded-2xl p-6 md:p-10 flex flex-col items-center">
         <h1 class="text-3xl md:text-4xl font-bold text-gray-800 text-center mb-6">Status da Produção</h1>
         <p class="text-lg text-gray-500 text-center mb-8">Última atualização em tempo real para toda a equipe.</p>
+        
+        <!-- ID do Usuário para Depuração -->
+        <p id="user-id" class="text-xs text-gray-400 mb-4"></p>
 
         <!-- Painel de Status -->
         <div id="status-panel" class="w-full p-8 md:p-12 text-center rounded-2xl transition-all duration-500 ease-in-out transform scale-100">
@@ -68,24 +71,26 @@
     <!-- Firebase SDKs -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInWithCustomToken, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, onSnapshot, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
-        // Variáveis globais do ambiente
+        // Use as variáveis globais fornecidas pelo ambiente.
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
         let app;
         let db;
         let auth;
+        let userId;
         let authStateReady = false;
-        let lastStatus = null; // Variável para rastrear o último status
+        let lastStatus = null;
 
         const statusPanel = document.getElementById('status-panel');
         const onTimeBtn = document.getElementById('on-time-btn');
         const delayedBtn = document.getElementById('delayed-btn');
         const loadingMsg = document.getElementById('loading-msg');
+        const userIdDisplay = document.getElementById('user-id');
         
         // Elementos do alerta personalizado
         const customAlertContainer = document.getElementById('custom-alert-container');
@@ -155,35 +160,6 @@
             loadingMsg.classList.add('hidden');
         }
 
-        // Inicialização do Firebase e autenticação
-        async function initializeFirebase() {
-            if (!firebaseConfig) {
-                console.error("Firebase config is missing.");
-                loadingMsg.textContent = 'Erro: Configuração do Firebase ausente.';
-                return;
-            }
-
-            app = initializeApp(firebaseConfig);
-            db = getFirestore(app);
-            auth = getAuth(app);
-            
-            try {
-                if (initialAuthToken) {
-                    await signInWithCustomToken(auth, initialAuthToken);
-                } else {
-                    await signInAnonymously(auth);
-                }
-                authStateReady = true;
-                console.log("Autenticação bem-sucedida.");
-                // Começa a escutar as atualizações do banco de dados após a autenticação
-                listenForStatusUpdates();
-                setupButtons();
-            } catch (error) {
-                console.error("Erro na autenticação:", error);
-                loadingMsg.textContent = `Erro de autenticação: ${error.message}`;
-            }
-        }
-
         // Funções para manipular o banco de dados
         async function updateStatus(isDelayed) {
             if (!authStateReady) return;
@@ -193,7 +169,7 @@
                 console.log("Status atualizado com sucesso.");
             } catch (error) {
                 console.error("Erro ao atualizar o status:", error);
-                alert("Erro ao atualizar o status. Verifique sua conexão.");
+                showAlert("Erro ao atualizar o status. Verifique sua conexão.");
             }
         }
 
@@ -206,14 +182,13 @@
                     const data = doc.data();
                     const currentStatus = data.isDelayed;
 
-                    // Mostra o alerta apenas se o status realmente mudou
                     if (lastStatus !== null && currentStatus !== lastStatus) {
                         const message = currentStatus ? "ATENÇÃO: Produção foi atualizada para ATRASADA!" : "Produção está agora EM DIA!";
                         showAlert(message);
                     }
                     
                     renderStatus(currentStatus);
-                    lastStatus = currentStatus; // Atualiza o último status
+                    lastStatus = currentStatus;
                 } else {
                     console.log("Documento não encontrado, criando um novo.");
                     updateStatus(false);
@@ -234,9 +209,48 @@
                 updateStatus(true);
             });
         }
+        
+        // Iniciar o aplicativo e autenticação
+        window.onload = async () => {
+            // Verifique se a configuração do Firebase está presente
+            if (!firebaseConfig.apiKey) {
+                console.error("Firebase config is incomplete.");
+                loadingMsg.textContent = 'Erro: Configure o Firebase. As credenciais estão ausentes ou incorretas.';
+                return;
+            }
 
-        // Iniciar o aplicativo
-        initializeFirebase();
+            try {
+                app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+
+                // Autentique o usuário usando o token ou anonimamente
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+
+                // O listener onAuthStateChanged garante que o usuário esteja autenticado antes de continuar
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        userId = user.uid;
+                        userIdDisplay.textContent = `ID do Usuário: ${userId}`;
+                        authStateReady = true;
+                        console.log("Autenticação bem-sucedida.");
+                        listenForStatusUpdates();
+                        setupButtons();
+                    } else {
+                        console.log("Usuário não autenticado.");
+                        loadingMsg.textContent = 'Erro na autenticação. Tente novamente.';
+                    }
+                });
+
+            } catch (error) {
+                console.error("Erro na autenticação:", error);
+                loadingMsg.textContent = `Erro de autenticação: ${error.message}`;
+            }
+        }
     </script>
 </body>
 </html>
