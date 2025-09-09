@@ -71,10 +71,21 @@
         import { getAuth, signInWithCustomToken, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, onSnapshot, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
-        // Variáveis globais do ambiente
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        // Variáveis de configuração do Firebase
+        // Estes são os seus valores obtidos do console do Firebase.
+        const firebaseConfig = {
+            apiKey: "AIzaSyBiVpMpGO1PUV-h_6lNRzL1vmcbb2gbXYI",
+            authDomain: "painel-diretorio-prod.firebaseapp.com",
+            projectId: "painel-diretorio-prod",
+            storageBucket: "painel-diretorio-prod.firebasestorage.app",
+            messagingSenderId: "960079986726",
+            appId: "1:960079986726:web:bacf2ef10e900fda8226e7",
+            measurementId: "G-DGRD5ME6VV"
+        };
+        const app_id_for_firestore = firebaseConfig.appId;
+
+        // O token de autenticação inicial não é necessário no GitHub Pages.
+        // A autenticação anônima será usada por padrão.
 
         let app;
         let db;
@@ -157,9 +168,10 @@
 
         // Inicialização do Firebase e autenticação
         async function initializeFirebase() {
-            if (!firebaseConfig) {
-                console.error("Firebase config is missing.");
-                loadingMsg.textContent = 'Erro: Configuração do Firebase ausente.';
+            // Verifique se todas as credenciais foram fornecidas
+            if (!firebaseConfig.apiKey || !firebaseConfig.authDomain || !firebaseConfig.projectId || !firebaseConfig.appId) {
+                console.error("Firebase config is incomplete.");
+                loadingMsg.textContent = 'Erro: Configure o Firebase. As credenciais estão ausentes ou incorretas.';
                 return;
             }
 
@@ -168,11 +180,8 @@
             auth = getAuth(app);
             
             try {
-                if (initialAuthToken) {
-                    await signInWithCustomToken(auth, initialAuthToken);
-                } else {
-                    await signInAnonymously(auth);
-                }
+                // A autenticação anônima é suficiente para este caso
+                await signInAnonymously(auth);
                 authStateReady = true;
                 console.log("Autenticação bem-sucedida.");
                 // Começa a escutar as atualizações do banco de dados após a autenticação
@@ -187,20 +196,21 @@
         // Funções para manipular o banco de dados
         async function updateStatus(isDelayed) {
             if (!authStateReady) return;
-            const statusDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'status_data', 'current_status');
+            const statusDocRef = doc(db, 'artifacts', app_id_for_firestore, 'public', 'data', 'status_data', 'current_status');
             try {
                 await setDoc(statusDocRef, { isDelayed: isDelayed, timestamp: new Date() }, { merge: true });
                 console.log("Status atualizado com sucesso.");
             } catch (error) {
                 console.error("Erro ao atualizar o status:", error);
-                alert("Erro ao atualizar o status. Verifique sua conexão.");
+                // Usar o alerta personalizado em vez do pop-up
+                showAlert("Erro ao atualizar o status. Verifique sua conexão.");
             }
         }
 
         // Listener em tempo real para o status
         function listenForStatusUpdates() {
             if (!authStateReady) return;
-            const statusDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'status_data', 'current_status');
+            const statusDocRef = doc(db, 'artifacts', app_id_for_firestore, 'public', 'data', 'status_data', 'current_status');
             onSnapshot(statusDocRef, (doc) => {
                 if (doc.exists()) {
                     const data = doc.data();
@@ -240,3 +250,4 @@
     </script>
 </body>
 </html>
+
